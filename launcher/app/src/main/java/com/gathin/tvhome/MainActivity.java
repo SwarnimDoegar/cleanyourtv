@@ -24,6 +24,7 @@ import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.Shader;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -214,6 +215,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float density;
     /** Module cards (res/values/config.xml, module_cards): discovered on resume, shown only after the owner's Show. */
     private boolean moduleCards;
+    /** dock_up_to_settings (res/values/config.xml only): Up from the dock focuses the Settings pill. */
+    private boolean dockUpToSettings;
+    /** stock_home_component (config.xml only): the pill that opens the stock home screen, and its target. */
+    private TextView btnStockHome;
+    /** speed_test_package (config.xml only): the Speed test pill and the app it opens. */
+    private TextView btnSpeedTest;
+    private String speedTestPackage;
+    private ComponentName stockHome;
+    /** expand_focused_pill (config.xml only): pills are round icons and the focused one shows its name. */
+    private boolean expandFocusedPill;
     /** config settings_key_keycodes / settings_key_panel, so the Settings button works on Home without HomeKeyService. */
     private int[] settingsKeycodes = new int[0];
     private boolean settingsKeyPanel;
@@ -444,6 +455,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // dock_title false: the name above the dock (and the cinematic lines under it) never shows; the glow
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
+        // news_feed: the news section takes the dock title's place; the room for it stays.
+        if (!getString(R.string.news_feed).trim().isEmpty()) hero.setVisibility(View.GONE);
         greeting = findViewById(R.id.greeting);
         clockBlock = findViewById(R.id.leftBlock);
         greetingColor = greeting.getCurrentTextColor();
@@ -467,6 +480,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnWifi = findViewById(R.id.btnWifi);
         shamsiDate = findViewById(R.id.shamsiDate);
         stats = findViewById(R.id.stats);
+        cricket = findViewById(R.id.cricket);
+        cricketStrip = getResources().getBoolean(R.bool.cricket_strip);
+        newsSection = findViewById(R.id.newsSection);
+        newsFeed = getString(R.string.news_feed).trim();
         raceCalendar = cfg.raceCalendar;
         racePanel = findViewById(R.id.racePanel);
         raceKicker = findViewById(R.id.raceKicker);
@@ -488,6 +505,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         vpnApp = cfg.vpnApp;
         moduleCards = cfg.moduleCards;
+        dockUpToSettings = getResources().getBoolean(R.bool.dock_up_to_settings);
         hiddenApps = new HashSet<>(cfg.hiddenApps);
 
         grid = findViewById(R.id.grid);
@@ -563,8 +581,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding,
-                singleRow, cfg.dockBandAll));
+        if (dockRow) {
+            dockDecoration = new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity,
+                    cfg.dockGlass, cfg.dockEvenPadding, singleRow, cfg.dockBandAll);
+            grid.addItemDecoration(dockDecoration);
+        }
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -686,6 +707,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             open(systemIntent(Settings.ACTION_WIFI_SETTINGS));
             return true;
         });
+        // picture_settings_action and sound_settings_action (config.xml): Picture and Sound pills after the network
+        // pill, opening the TV's own picture menu (backlight, picture mode, colour temperature) and sound menu.
+        TextView btnPicture = actionPill(R.id.btnPicture, R.string.picture_settings_action);
+        TextView btnSound = actionPill(R.id.btnSound, R.string.sound_settings_action);
+        // stock_home_component (config.xml): a pill that opens the stock home screen (Google's, with its
+        // recommendation rows) while this launcher stays the default Home, so the remote's Home button comes back.
+        // Shown only while that launcher is enabled (updateStockHomePill, also from onResume).
+        // speed_test_package (config.xml): a Speed test pill right after the network pill, opening that app.
+        // Shown only while the app can be launched (updateStockHomePill, also from onResume).
+        btnSpeedTest = findViewById(R.id.btnSpeedTest);
+        speedTestPackage = getString(R.string.speed_test_package).trim();
+        btnSpeedTest.setOnClickListener(v -> {
+            Intent launch = appLaunchIntent(speedTestPackage);
+            if (launch != null) open(launch);
+        });
+        btnStockHome = findViewById(R.id.btnStockHome);
+        stockHome = ComponentName.unflattenFromString(getString(R.string.stock_home_component).trim());
+        btnStockHome.setOnClickListener(v -> {
+            if (stockHome != null) open(new Intent(Intent.ACTION_MAIN).setComponent(stockHome));
+        });
         launcherSettingsButton = cfg.launcherSettingsButton;
         if (launcherSettingsButton) {
             ((TextView) btnSettings).setText(R.string.launcher_settings);
@@ -726,6 +767,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             showInputsPill = false;
             btnInputs.setVisibility(View.GONE);
             btnWifi.setVisibility(View.GONE);
+            btnPicture.setVisibility(View.GONE);
+            btnSound.setVisibility(View.GONE);
             ((TextView) btnSettings).setText(R.string.settings);
             ((TextView) btnSettings).setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_settings, 0, 0, 0);
             if (!iconOnlyButtons) makeIconOnly((TextView) btnSettings);
@@ -741,8 +784,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (iconOnlyButtons) {
             if (cfg.wifiLabelWidth > 0) btnWifi.setMaxWidth(Math.round(cfg.wifiLabelWidth * density));
             else makeIconOnly(btnWifi);
+            makeIconOnly(btnPicture);
+            makeIconOnly(btnSound);
+            makeIconOnly(btnStockHome);
+            makeIconOnly(btnSpeedTest);
             makeIconOnly((TextView) btnSettings);
         }
+        updateStockHomePill();
         if (cfg.iconOnlyInputs) makeIconOnly((TextView) btnInputs);
         btnSettings.setOnLongClickListener(v -> {
             showSettingsMenu();
@@ -756,24 +804,53 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
             if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return true;
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
-                // Back to the dock tile Up came from, not wherever the focus finder lands.
+                // The news section sits between the pills and the dock; then the dock tile Up came from.
+                if (newsSectionUp() && newsSection.requestFocus()) return true;
                 focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
                 return true;
             }
-            int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
-            int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
-            int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
-            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
-            return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
+            if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+            // Step to the neighbouring pill on screen by hand: the focus finder could pick the news section below
+            // the bar instead. Nothing past either end.
+            View next = adjacentPill(v, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
+            if (next != null) next.requestFocus();
+            return true;
         };
+        // The news section: Left/Right step through the headlines, OK searches YouTube for the featured one,
+        // Up goes on to Settings and Down back to the dock.
+        newsSection.setOnClickListener(v -> {
+            if (!headlines.isEmpty()) searchYouTube(headlines.get(headlineIndex % headlines.size()));
+        });
+        newsSection.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (keyCode) {
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    focusSettingsPill();
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN:
+                    focusTile(singleRow ? lastFocused : lastFocused % COLUMNS);
+                    return true;
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    stepHeadline(keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ^ rtlMenuBar ? 1 : -1);
+                    return true;
+                default:
+                    return false;
+            }
+        });
+        newsSection.setOnFocusChangeListener((v, focused) -> renderNews(false));
         btnInputs.setOnKeyListener(pillKeys);
         btnWifi.setOnKeyListener(pillKeys);
+        btnPicture.setOnKeyListener(pillKeys);
+        btnSound.setOnKeyListener(pillKeys);
+        btnStockHome.setOnKeyListener(pillKeys);
+        btnSpeedTest.setOnKeyListener(pillKeys);
         btnSettings.setOnKeyListener(pillKeys);
         btnReorder.setOnKeyListener(pillKeys);
         btnLibraryTop.setOnKeyListener(pillKeys);
         for (View button : topAppButtons) button.setOnKeyListener(pillKeys);
         if (advancedEffects) {
-            List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnReorder, btnLibraryTop, btnSettings));
+            List<View> pills = new ArrayList<>(Arrays.asList(btnInputs, btnWifi, btnSpeedTest, btnPicture, btnSound, btnStockHome, btnReorder, btnLibraryTop, btnSettings));
             pills.addAll(topAppButtons);
             for (View button : pills) {
                 button.setOnFocusChangeListener((view, focused) -> view.animate()
@@ -781,11 +858,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                         .setDuration(reducedMotion ? Motion.REDUCED_MS : 160).start());
             }
         }
+        // expand_focused_pill (config.xml): every labelled pill a round icon, the focused one widening to icon and
+        // name. The width animates frame by frame (animatePillWidth), so the bar lays out again each frame and the
+        // neighbours slide along.
+        expandFocusedPill = getResources().getBoolean(R.bool.expand_focused_pill) && !topMenu;
+        if (expandFocusedPill) {
+            wifiIconOnly = true;   // the network name lives in the content description, shown on focus
+            for (TextView pill : Arrays.asList((TextView) btnInputs, btnWifi, btnSpeedTest, btnPicture, btnSound, btnStockHome, (TextView) btnSettings)) {
+                if (!TextUtils.isEmpty(pill.getText())) makeIconOnly(pill);
+                View.OnFocusChangeListener scale = pill.getOnFocusChangeListener();
+                pill.setOnFocusChangeListener((view, focused) -> {
+                    if (focused) expandPill(pill);
+                    else collapsePill(pill);
+                    if (scale != null) scale.onFocusChange(view, focused);
+                });
+            }
+        }
         if (festive) applyFestiveSkin((TextView) btnInputs, (TextView) btnSettings);
 
         // Hide the glass when focus leaves the tiles.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener((oldF, newF) -> {
             boolean onTile = newF != null && newF.getId() == R.id.card;
+            if (newF == newsSection || newF != null && newF.getParent() == findViewById(R.id.topButtons)) showNewsSection(true);
             if (!onTile) hideGlass();
         });
 
@@ -908,6 +1002,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     protected void onResume() {
         super.onResume();
+        updateStockHomePill();   // the stock launcher may have been enabled or disabled meanwhile
         // A festival that started or ended while Home was in the background: rebuild with or without it.
         if (festive != festival.active(LocalDate.now())) {
             recreate();
@@ -951,6 +1046,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             pillsShown = true;
         }
         if (showStats) startStats();
+        if (cricketStrip) startCricket();
+        if (!newsFeed.isEmpty()) startNews();
         sky.update();
         wallpaperPlayer.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
@@ -1128,6 +1225,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         heroArt.animate().cancel();
         handler.removeCallbacks(minuteTick);
         stopStats();
+        stopCricket();
+        stopNews();
         if (diya != null) diya.stop();
         cancelPendingFocusScroll();
         // Nothing of ours stays on screen over another app; an undecided prompt simply returns next time.
@@ -1582,6 +1681,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onTileFocused(int position, View card) {
         lastFocused = position;
+        showNewsSection(position < COLUMNS);
         lastFocusedKey = adapter.keyAt(position);
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
         // would be sized to 2*pad. Run again once the tile is laid out.
@@ -2002,6 +2102,247 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else glass.setAlpha(0f);
     }
 
+    // ---- cricket strip (config.xml cricket_strip, local) ---------------------------------------------
+
+    /** The line under the clock, and its background fetcher: running only while Home is resumed. */
+    private TextView cricket;
+    private boolean cricketStrip;
+    private HandlerThread cricketThread;
+    /** The current run's handler; a run whose handler is no longer this one stops (volatile: read off-thread). */
+    private volatile Handler cricketBg;
+
+    private void startCricket() {
+        if (cricketThread != null) return;
+        List<String> teams = Arrays.asList(getResources().getStringArray(R.array.cricket_teams));
+        List<String> leagues = Arrays.asList(getResources().getStringArray(R.array.cricket_leagues));
+        cricketThread = new HandlerThread("cricket");
+        cricketThread.start();
+        Handler bg = new Handler(cricketThread.getLooper());
+        cricketBg = bg;
+        bg.post(new Runnable() {
+            @Override
+            public void run() {
+                if (cricketBg != bg) return;
+                long next;
+                try {
+                    CricketStrip.Line line = CricketStrip.pick(CricketStrip.fetch(), teams, leagues,
+                            System.currentTimeMillis(), java.time.ZoneId.systemDefault(),
+                            android.text.format.DateFormat.is24HourFormat(MainActivity.this));
+                    handler.post(() -> {
+                        if (cricketBg != bg) return;
+                        cricket.setText(line == null ? null : line.text);
+                        cricket.setVisibility(line == null ? View.GONE : View.VISIBLE);
+                        // The header grew or shrank: keep the news section clear of it, once laid out.
+                        if (newsShown) cricket.post(MainActivity.this::placeNewsSection);
+                    });
+                    next = line != null && line.live ? CricketStrip.LIVE_MS : CricketStrip.IDLE_MS;
+                } catch (IOException | org.json.JSONException e) {
+                    next = CricketStrip.RETRY_MS;   // offline or a changed feed: keep the last line, try again soon
+                }
+                if (cricketBg == bg) bg.postDelayed(this, next);
+            }
+        });
+    }
+
+    private void stopCricket() {
+        if (cricketThread == null) return;
+        cricketBg.removeCallbacksAndMessages(null);
+        cricketThread.quit();
+        cricketThread = null;
+        cricketBg = null;
+        // Paused: keep the last line, as the stats line does, so the grid does not move under the highlight.
+    }
+
+    // ---- news section (config.xml news_feed, local) --------------------------------------------------
+
+    /**
+     * Headlines from news_feed in the space above the dock, where the dock title would be: a featured headline and
+     * its outlet. Fetched while Home is resumed; it moves on by itself unless focused.
+     */
+    private View newsSection;
+    /** The dock band, whose edges the news section takes. */
+    private DockDecoration dockDecoration;
+    private String newsFeed;
+    private HandlerThread newsThread;
+    private volatile Handler newsBg;
+    private List<String> headlines = Collections.emptyList();
+    private int headlineIndex;
+    /** Whether the section is up: the dock row, the section itself or the pills have focus. */
+    private boolean newsShown;
+    private final Runnable nextHeadline = new Runnable() {
+        @Override
+        public void run() {
+            if (headlines.isEmpty()) return;
+            if (!newsSection.isFocused()) {
+                headlineIndex = (headlineIndex + 1) % headlines.size();
+                renderNews(true);
+            }
+            handler.postDelayed(this, newsHoldMs());
+        }
+    };
+
+    private long newsHoldMs() {
+        return getResources().getInteger(R.integer.news_rotate_seconds) * 1000L;
+    }
+
+    /** True when there is something to show and nothing has scrolled up under the section. */
+    private boolean newsSectionUp() {
+        return newsShown && !headlines.isEmpty() && newsSection.getVisibility() == View.VISIBLE;
+    }
+
+    private boolean focusNewsSection() {
+        if (!newsSectionUp() || !newsSection.requestFocus()) return false;
+        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+        return true;
+    }
+
+    /** Left/Right on the section: the previous or next headline, and the timer starts over. */
+    private void stepHeadline(int by) {
+        if (headlines.isEmpty()) return;
+        headlineIndex = ((headlineIndex + by) % headlines.size() + headlines.size()) % headlines.size();
+        renderNews(true);
+        handler.removeCallbacks(nextHeadline);
+        handler.postDelayed(nextHeadline, newsHoldMs());
+    }
+
+    /** Fades the section in (dock row, pills, the section) or out (the grid scrolled up into its space). */
+    private void showNewsSection(boolean show) {
+        if (newsFeed.isEmpty() || headlines.isEmpty()) show = false;
+        if (show == newsShown) return;
+        newsShown = show;
+        if (show) {
+            placeNewsSection();
+            newsSection.setVisibility(View.VISIBLE);
+        }
+        newsSection.animate().cancel();
+        if (reducedMotion || !animations) {
+            newsSection.setAlpha(show ? 1f : 0f);
+            if (!show) newsSection.setVisibility(View.GONE);
+        } else if (show) {
+            newsSection.animate().alpha(1f).setDuration(220).start();
+        } else {
+            newsSection.animate().alpha(0f).setDuration(160).withEndAction(() -> {
+                if (!newsShown) newsSection.setVisibility(View.GONE);
+            }).start();
+        }
+    }
+
+    /**
+     * Puts the section under the header (the clock and the cricket strip), with the dock band's edges.
+     */
+    private void placeNewsSection() {
+        View header = (View) findViewById(R.id.leftBlock).getParent();
+        Rect r = new Rect(0, 0, header.getWidth(), header.getHeight());
+        root.offsetDescendantRectToMyCoords(header, r);
+        float top = r.bottom + 18 * density;
+        newsSection.setY(top);
+        // The dock band's left edge and width, so the section and the dock read as one column.
+        RectF band = dockDecoration != null ? dockDecoration.bandBounds() : null;
+        int width = Math.max(1, newsSection.getWidth());
+        if (band != null && !band.isEmpty()) {
+            Rect g = new Rect(0, 0, grid.getWidth(), grid.getHeight());
+            root.offsetDescendantRectToMyCoords(grid, g);
+            width = Math.round(band.width());
+            ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) newsSection.getLayoutParams();
+            if (lp.width != width || lp.getMarginStart() != 0 || lp.getMarginEnd() != 0) {
+                lp.width = width;
+                lp.setMarginStart(0);
+                lp.setMarginEnd(0);
+                newsSection.setLayoutParams(lp);
+            }
+            newsSection.setX(g.left + band.left);
+        }
+    }
+
+    /** The featured headline, its outlet and position, the hints while focused, and the next few headlines. */
+    private void renderNews(boolean fade) {
+        if (headlines.isEmpty()) return;
+        int n = headlines.size();
+        int at = headlineIndex % n;
+        String[] featured = NewsLine.split(headlines.get(at));
+        String meta = "NEWS   \u00B7   " + (featured[1].isEmpty() ? "" : featured[1] + "   \u00B7   ") + (at + 1) + " / " + n
+                + (newsSection.isFocused() ? "        \u25C0 \u25B6  more     OK  search on YouTube" : "");
+        TextView metaView = findViewById(R.id.newsMeta);
+        TextView title = findViewById(R.id.newsHeadline);
+        // The outlet line and the headline change together.
+        Runnable apply = () -> {
+            metaView.setText(meta);
+            title.setText(featured[0]);
+        };
+        View[] parts = {metaView, title};
+        for (View part : parts) part.animate().cancel();
+        if (!fade || !animations || reducedMotion || newsSection.getVisibility() != View.VISIBLE) {
+            apply.run();
+            for (View part : parts) part.setAlpha(1f);
+            return;
+        }
+        metaView.animate().alpha(0f).setDuration(150).start();
+        // The swap rides on the headline's fade (a cancelled fade skips it; the newer render swaps instead).
+        title.animate().alpha(0f).setDuration(150).withEndAction(() -> {
+            apply.run();
+            for (View part : parts) part.animate().alpha(1f).setDuration(200).start();
+        }).start();
+    }
+
+    private void startNews() {
+        if (newsThread != null) return;
+        newsThread = new HandlerThread("news");
+        newsThread.start();
+        Handler bg = new Handler(newsThread.getLooper());
+        newsBg = bg;
+        bg.post(new Runnable() {
+            @Override
+            public void run() {
+                if (newsBg != bg) return;
+                long next = NewsLine.REFRESH_MS;
+                try {
+                    List<String> fresh = NewsLine.headlines(Http.get(newsFeed));
+                    handler.post(() -> {
+                        if (newsBg != bg) return;
+                        boolean first = headlines.isEmpty();
+                        headlines = fresh;
+                        if (fresh.isEmpty()) {
+                            handler.removeCallbacks(nextHeadline);
+                            showNewsSection(false);
+                            return;
+                        }
+                        if (first) headlineIndex = 0;
+                        renderNews(false);
+                        // Shown at once when the dock row (or the pills) already has focus.
+                        View focus = getCurrentFocus();
+                        if (focus == null || focus.getId() != R.id.card || lastFocused < COLUMNS) showNewsSection(true);
+                        if (first) handler.postDelayed(nextHeadline, newsHoldMs());
+                    });
+                } catch (IOException | org.xmlpull.v1.XmlPullParserException e) {
+                    next = NewsLine.RETRY_MS;   // offline: keep the headlines we have, try again soon
+                }
+                if (newsBg == bg) bg.postDelayed(this, next);
+            }
+        });
+        // Back on Home with headlines already loaded: carry on rotating while the next fetch runs.
+        if (!headlines.isEmpty()) handler.postDelayed(nextHeadline, newsHoldMs());
+    }
+
+    /** YouTube's search results for a headline, without the outlet Google News appends (" - Outlet"). */
+    private void searchYouTube(String headline) {
+        if (headline == null) return;
+        String query = NewsLine.split(headline)[0];
+        Intent search = new Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(query)))
+                .setPackage("com.google.android.youtube.tv");
+        if (getPackageManager().resolveActivity(search, 0) == null) search.setPackage(null);
+        open(search);
+    }
+
+    private void stopNews() {
+        handler.removeCallbacks(nextHeadline);
+        if (newsThread == null) return;
+        newsBg.removeCallbacksAndMessages(null);
+        newsThread.quit();
+        newsThread = null;
+        newsBg = null;
+    }
+
     // ---- optional system stats (config.xml show_stats) --------------------------------------------
 
     /** Background reader. Started only while Home is resumed and show_stats is on. */
@@ -2200,7 +2541,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (singleRow) {
             // One row: Up leaves for the top bar, Down has nowhere to go, and Left/Right walk the whole row,
             // stopping at its two ends (the default focus search scrolls the row to the next tile).
-            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) return focusNewsSection() || dockUpToSettings && focusSettingsPill();
             if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) return true;
             boolean forward = rtlAppGrid ? keyCode == KeyEvent.KEYCODE_DPAD_LEFT : keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
             int last = adapter.focusablePosition(count - 1);
@@ -2224,7 +2565,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            // dock row: let focus move to the top bar (onto Settings with dock_up_to_settings)
+            if (position < COLUMNS) return focusNewsSection() || dockUpToSettings && focusSettingsPill();
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -2245,6 +2587,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         libraryFocusPending = false;
         hideGlass();
         hideHero();
+    }
+
+    /** The shown pill next to this one on screen, to its left or right, or null at that end of the bar. */
+    private View adjacentPill(View pill, boolean left) {
+        ViewGroup bar = (ViewGroup) pill.getParent();
+        View best = null;
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            View other = bar.getChildAt(i);
+            if (other == pill || other.getVisibility() != View.VISIBLE || !other.isFocusable()) continue;
+            boolean onSide = left ? other.getRight() <= pill.getLeft() : other.getLeft() >= pill.getRight();
+            if (!onSide) continue;
+            if (best == null || (left ? other.getRight() > best.getRight() : other.getLeft() < best.getLeft())) best = other;
+        }
+        return best;
+    }
+
+    /** dock_up_to_settings: Up from the dock lands on Settings instead of whichever pill is nearest above the tile. */
+    private boolean focusSettingsPill() {
+        View settings = findViewById(R.id.btnSettings);
+        if (settings.getVisibility() != View.VISIBLE || !settings.requestFocus()) return false;
+        grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+        return true;
     }
 
     /** The first top-bar button after Inputs that is shown, in bar order (top_bar_apps, the network pill, ...); Settings is always there. */
@@ -2595,7 +2959,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else if (!TextUtils.equals(btnWifi.getText(), text)) {
             btnWifi.setText(text);
         }
-        if (wifiIconOnly) {
+        // An expanded (focused) pill keeps the name it now shows; it moves to the description on focus loss.
+        if (wifiIconOnly && !(expandFocusedPill && btnWifi.isFocused())) {
             btnWifi.setContentDescription(btnWifi.getText());
             btnWifi.setText(null);
         }
@@ -2637,13 +3002,193 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     /** Turns a labelled top pill into the round TopButtonIcon shape: no text, the icon centred by even padding. */
     private void makeIconOnly(TextView pill) {
-        pill.setContentDescription(pill.getText());
+        // Already an icon (expand_focused_pill collapses on every focus loss): keep the label it has.
+        if (!TextUtils.isEmpty(pill.getText())) pill.setContentDescription(pill.getText());
         pill.setText(null);
         pill.setMaxWidth(Integer.MAX_VALUE);
         int pad = Math.round(10 * density);
         pill.setPaddingRelative(pad, 0, pad, 0);
         pill.setCompoundDrawablePadding(0);
         pill.getLayoutParams().width = Math.round(42 * density);
+    }
+
+    /**
+     * expand_focused_pill: the focused pill back to icon and name, as a TopButton draws it, widening from the
+     * circle. The name starts at the icon and is cut at the pill's edge while it grows: centred text that scrolls
+     * horizontally is placed for the final width and slid out of the pill (seen on a MiTV-AXSO2).
+     */
+    private void expandPill(TextView pill) {
+        CharSequence label = pill.getContentDescription();
+        if (TextUtils.isEmpty(label)) return;
+        int from = pill.getWidth() > 0 ? pill.getWidth() : Math.round(42 * density);
+        pill.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        pill.setMaxLines(1);
+        pill.setHorizontallyScrolling(true);
+        pill.setEllipsize(null);
+        pill.setMaxWidth(Integer.MAX_VALUE);
+        pill.setPaddingRelative(Math.round(16 * density), 0, Math.round(20 * density), 0);
+        pill.setCompoundDrawablePadding(Math.round(9 * density));
+        pill.setText(label);
+        // The width the name needs, capped like the network pill so a long one cannot crowd out the clock.
+        int max = Math.round(220 * density);
+        pill.measure(View.MeasureSpec.makeMeasureSpec(max, View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(pill.getHeight() > 0 ? pill.getHeight() : Math.round(42 * density),
+                        View.MeasureSpec.EXACTLY));
+        int to = Math.min(max, pill.getMeasuredWidth());
+        animatePillWidth(pill, from, to);
+    }
+
+    /** expand_focused_pill: back to the round icon, narrowing to the circle. */
+    private void collapsePill(TextView pill) {
+        int from = pill.getWidth();
+        makeIconOnly(pill);
+        pill.setGravity(Gravity.CENTER);
+        if (from > 0) animatePillWidth(pill, from, Math.round(42 * density));
+    }
+
+    /** Animates a pill's width, laying the bar out every frame; a newer animation on the same pill replaces it. */
+    private void animatePillWidth(TextView pill, int from, int to) {
+        Object running = pill.getTag(R.id.topButtons);
+        if (running instanceof ValueAnimator) ((ValueAnimator) running).cancel();
+        ViewGroup.LayoutParams lp = pill.getLayoutParams();
+        if (reducedMotion || from == to) {
+            lp.width = to;
+            pill.setLayoutParams(lp);
+            return;
+        }
+        ValueAnimator widen = ValueAnimator.ofInt(from, to).setDuration(180);
+        widen.addUpdateListener(a -> {
+            lp.width = (int) a.getAnimatedValue();
+            pill.setLayoutParams(lp);
+        });
+        pill.setTag(R.id.topButtons, widen);
+        widen.start();
+    }
+
+    // ---- theme switcher ------------------------------------------------------------------------------
+
+    /** Theme folders stored on the TV in files/themes/<name>/, each laid out like a tools/theme.sh folder. */
+    private File themeLibrary() {
+        File dir = getExternalFilesDir(null);
+        return dir == null ? null : new File(dir, "themes");
+    }
+
+    /** The stored themes that have a config.json, by folder name. */
+    private List<String> themeNames() {
+        List<String> names = new ArrayList<>();
+        File library = themeLibrary();
+        File[] dirs = library == null ? null : library.listFiles(File::isDirectory);
+        if (dirs != null) {
+            for (File dir : dirs) if (new File(dir, Config.FILE_NAME).isFile()) names.add(dir.getName());
+        }
+        Collections.sort(names);
+        return names;
+    }
+
+    /** Hold OK on Settings, Themes: Default plus each stored theme, the current one ticked. */
+    private void showThemeMenu() {
+        View anchor = findViewById(R.id.btnSettings);
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (200 * density));
+        String active = getSharedPreferences(THEME_SWITCHER_PREFS, MODE_PRIVATE).getString(THEME_ACTIVE_KEY, null);
+        addSettingsMenuRow(rows, popup, themeRowTitle(getString(R.string.theme_default), active == null),
+                () -> applyTheme(null));
+        for (String name : themeNames()) {
+            String title = Character.toUpperCase(name.charAt(0)) + name.substring(1).replace('-', ' ');
+            addSettingsMenuRow(rows, popup, themeRowTitle(title, name.equals(active)), () -> applyTheme(name));
+        }
+        panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
+        dropIn(popup, panel, anchor, getResources().getBoolean(R.bool.rtl_menu_bar) ? Gravity.START : Gravity.END);
+        rows.getChildAt(0).requestFocus();
+    }
+
+    private static String themeRowTitle(String title, boolean active) {
+        return active ? title + "  ✓" : title;
+    }
+
+    /**
+     * Makes a stored theme the active one (null: no theme, config.xml alone): its files replace the active
+     * config.json, wallpaper.jpg and wallpapers/, and a new theme_revision tells Config to drop the on-TV look
+     * choices, as a tools/theme.sh push does. Copied off the main thread, then Home is rebuilt.
+     */
+    private void applyTheme(String name) {
+        File dir = getExternalFilesDir(null);
+        File library = themeLibrary();
+        if (dir == null || library == null) return;
+        new Thread(() -> {
+            boolean ok = true;
+            try {
+                File wallpapers = new File(dir, ThemeFiles.WALLPAPERS);
+                new File(dir, Config.FILE_NAME).delete();
+                new File(dir, Config.WALLPAPER_NAME).delete();
+                File[] old = wallpapers.listFiles();
+                if (old != null) for (File f : old) f.delete();
+                if (name != null) {
+                    File src = new File(library, name);
+                    copyFile(new File(src, Config.FILE_NAME), new File(dir, Config.FILE_NAME));
+                    File wallpaper = new File(src, Config.WALLPAPER_NAME);
+                    if (wallpaper.isFile()) copyFile(wallpaper, new File(dir, Config.WALLPAPER_NAME));
+                    File[] images = new File(src, ThemeFiles.WALLPAPERS).listFiles(File::isFile);
+                    if (images != null && images.length > 0) {
+                        wallpapers.mkdirs();
+                        for (File image : images) copyFile(image, new File(wallpapers, image.getName()));
+                    }
+                }
+                try (java.io.FileWriter revision = new java.io.FileWriter(new File(dir, "theme_revision"))) {
+                    revision.write(java.util.UUID.randomUUID().toString().replace("-", ""));
+                }
+            } catch (IOException e) {
+                ok = false;
+            }
+            getSharedPreferences(THEME_SWITCHER_PREFS, MODE_PRIVATE).edit().putString(THEME_ACTIVE_KEY, name).commit();
+            boolean copied = ok;
+            runOnUiThread(() -> {
+                if (!copied) Toast.makeText(this, R.string.theme_failed, Toast.LENGTH_LONG).show();
+                recreate();
+            });
+        }).start();
+    }
+
+    private static void copyFile(File from, File to) throws IOException {
+        java.nio.file.Files.copy(from.toPath(), to.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static final String THEME_SWITCHER_PREFS = "theme_switcher";
+    private static final String THEME_ACTIVE_KEY = "active";
+
+    /** A top-bar pill that opens a config.xml action (the TV's picture or sound menu); empty leaves it hidden. */
+    private TextView actionPill(int id, int actionRes) {
+        TextView pill = findViewById(id);
+        String action = getString(actionRes).trim();
+        if (!action.isEmpty()) {
+            pill.setVisibility(View.VISIBLE);
+            pill.setOnClickListener(v -> open(new Intent(action)));
+        }
+        return pill;
+    }
+
+    /** stock_home_component and speed_test_package: each pill shows only while its app can be opened. */
+    private void updateStockHomePill() {
+        boolean enabled = false;
+        if (stockHome != null && !topMenu) {
+            try {
+                enabled = getPackageManager().getApplicationInfo(stockHome.getPackageName(), 0).enabled;
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // not installed, or disabled and so left out of the lookup
+            }
+        }
+        btnStockHome.setVisibility(enabled ? View.VISIBLE : View.GONE);
+        btnSpeedTest.setVisibility(!topMenu && appLaunchIntent(speedTestPackage) != null ? View.VISIBLE : View.GONE);
+    }
+
+    /** The TV launch intent of an installed, enabled app, or null. */
+    private Intent appLaunchIntent(String pkg) {
+        if (pkg == null || pkg.isEmpty()) return null;
+        PackageManager pm = getPackageManager();
+        Intent launch = pm.getLeanbackLaunchIntentForPackage(pkg);
+        return launch != null ? launch : pm.getLaunchIntentForPackage(pkg);
     }
 
     // ---- festive skin ------------------------------------------------------------------------------
@@ -3145,6 +3690,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (vendor != null) open(vendor);
             });
         }
+        if (!themeNames().isEmpty()) addSettingsMenuRow(rows, popup, R.string.theme_switcher, () -> root.post(this::showThemeMenu));
         if (moduleCards) addSettingsMenuRow(rows, popup, R.string.module_cards, this::showModuleCards);
         if (dockRow) addSettingsMenuRow(rows, popup, R.string.dock_edit, this::startDockEdit);
         addSettingsMenuRow(rows, popup, R.string.reorder, this::toggleReorder);
@@ -3190,6 +3736,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         });
         // Some firmware has no App info page at all; a row that only toasts "can't open" helps nobody.
         Intent info = SystemSettings.appInfo(this, pkg);
+        // Close app opens the same page for its Force stop: a launcher can't force-stop an app itself, and the
+        // MiTV-AXSO2 firmware refuses killBackgroundProcesses from apps ("Invalid packageName").
+        if (info != null) addSettingsMenuRow(rows, popup, R.string.tile_close, () -> open(new Intent(info)));
         if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info, () -> open(info));
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
@@ -3212,6 +3761,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, Runnable action) {
+        addSettingsMenuRow(rows, popup, getText(title), action);
+    }
+
+    private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, CharSequence title, Runnable action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         row.findViewById(R.id.icon).setVisibility(View.GONE);
         row.findViewById(R.id.dot).setVisibility(View.GONE);

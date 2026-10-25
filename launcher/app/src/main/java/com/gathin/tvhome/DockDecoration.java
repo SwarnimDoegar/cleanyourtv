@@ -19,6 +19,8 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
     private final Paint band = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    /** The band as last drawn, in the grid's coordinates, so the news section can line up with it (local). */
+    private final RectF drawn = new RectF();
 
     /** Extra band below the tiles for their names (always_show_names), in px. */
     private final float namesRoom;
@@ -143,5 +145,11 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         }
         c.drawRoundRect(rect, radius, radius, band);
         c.drawRoundRect(rect, radius, radius, edge);
+        drawn.set(rect);
+    }
+
+    /** The band's bounds as last drawn (grid coordinates); empty before the first draw. */
+    RectF bandBounds() {
+        return drawn;
     }
 }

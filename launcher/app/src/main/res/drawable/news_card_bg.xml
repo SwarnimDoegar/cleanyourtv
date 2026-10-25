@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The news card under the clock: faint frosted glass, brighter with a rim while focused (OK searches YouTube). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="26dp" />
+            <solid android:color="#40FFFFFF" />
+            <stroke android:width="1.5dp" android:color="#B3FFFFFF" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="26dp" />
+            <solid android:color="#14FFFFFF" />
+        </shape>
+    </item>
+</selector>

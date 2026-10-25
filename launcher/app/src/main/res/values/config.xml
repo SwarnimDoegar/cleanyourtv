@@ -15,12 +15,57 @@
         <item>com.amazon.tv.launcher/com.amazon.tv.launcher.ui.MainSettingsActivity</item>
     </string-array>
 
+    <!-- A "Picture" pill after the network pill, opening this action: the TV's own picture menu (backlight,
+         picture mode, colour temperature). Empty leaves the pill out. config.xml only.
+         Xiaomi MiTV-AXSO2 (Android TV 11): com.mitv.settings.PICTURE_SETTINGS. -->
+    <string name="picture_settings_action" translatable="false">com.mitv.settings.PICTURE_SETTINGS</string>
+    <!-- A "Sound" pill after Picture, opening this action: the TV's own sound menu (sound mode, speakers, output
+         delay). Empty leaves the pill out. config.xml only. Xiaomi MiTV-AXSO2: com.mitv.settings.SOUND_SETTINGS. -->
+    <string name="sound_settings_action" translatable="false">com.mitv.settings.SOUND_SETTINGS</string>
+    <!-- A "Speed test" pill right after the network pill, opening this app. Shown only while the app is installed and
+         enabled; list it in hidden_apps too to keep it off the grid. Empty leaves the pill out. config.xml only. -->
+    <string name="speed_test_package" translatable="false">com.analiti.fastest.android</string>
+
+    <!-- Up from the dock focuses the Settings pill, instead of whichever top-bar pill is nearest above the tile.
+         config.xml only. -->
+    <bool name="dock_up_to_settings">true</bool>
+
+    <!-- A "Google TV" pill after Picture that opens this stock home screen (package/activity), with its recommendation
+         rows, while this launcher stays the default Home: the remote's Home button comes back here. Shown only while
+         that launcher is enabled; install with STOCK_LAUNCHER=none so build-and-install.sh leaves it on. Empty leaves
+         the pill out. config.xml only. -->
+    <string name="stock_home_component" translatable="false"></string>
+
+    <!-- A line under the clock for a cricket match: live score first, then a match starting within 12 hours, then a
+         result from the last 6 hours; hidden otherwise. From ESPN's public scoreboard, fetched only while Home is on
+         screen (every 15 seconds while live, every 10 minutes otherwise). Local fork: needs the INTERNET permission. -->
+    <bool name="cricket_strip">true</bool>
+    <!-- Teams followed, by a word in the team's name: "India" covers India, India A, India Women and India U19. -->
+    <string-array name="cricket_teams" translatable="false">
+        <item>India</item>
+    </string-array>
+    <!-- Headlines under the cricket strip, one at a time, from this RSS feed: Google News top stories for India in
+         English (hl=hi&ceid=IN:hi for Hindi). Fetched every 15 minutes while Home is on screen. Empty turns it off.
+         Local fork: needs the INTERNET permission. -->
+    <string name="news_feed" translatable="false">https://news.google.com/rss?hl=en-IN&amp;gl=IN&amp;ceid=IN:en</string>
+    <!-- Seconds each headline stays before the next one. -->
+    <integer name="news_rotate_seconds">10</integer>
+
+    <!-- Leagues followed whatever the teams, by a part of the league's name. -->
+    <string-array name="cricket_leagues" translatable="false">
+        <item>Indian Premier League</item>
+    </string-array>
+
+    <!-- Every labelled pill in the top bar as a round icon; the focused one widens to icon and name, animated.
+         config.xml only. -->
+    <bool name="expand_focused_pill">true</bool>
+
     <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
     <string-array name="dock_apps">
         <item>com.netflix.ninja</item>
         <item>com.amazon.amazonvideo.livingroom</item>
-        <item>com.google.android.youtube.tv</item>
         <item>in.startv.hotstar</item>
+        <item>com.google.android.youtube.tv</item>
     </string-array>
     <!-- With fewer dock_apps than columns (or a dock app that is not installed), the free dock slots take
          the first grid apps, so the dock never shows a gap. false leaves them empty (#162); a theme can
@@ -29,12 +74,13 @@
 
     <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
     <string-array name="hidden_apps">
-        <item>com.mediatek.wwtv.tvcenter</item>
+        <item>com.android.tv</item>
         <item>com.mitv.gallery</item>
+        <item>com.analiti.fastest.android</item>   <!-- opened from the Speed test pill instead -->
     </string-array>
 
     <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
-    <string name="live_tv_package" translatable="false">com.mediatek.wwtv.tvcenter</string>
+    <string name="live_tv_package" translatable="false">com.android.tv</string>
 
     <!-- Open the Live TV app above the first time Home comes up after the TV is switched on, for sets that are
          mostly used for broadcast TV. Once per boot: Home after that stays Home. Can also be set with
@@ -45,7 +91,7 @@
          after the TV starts it opens that app instead. Once per boot, like boot_to_live_tv (which wins when
          both are set); Home after that stays Home, and an app that is gone or disabled leaves Home on screen.
          Off by default; a theme can set "open_on_start_choice": true. -->
-    <bool name="open_on_start_choice">false</bool>
+    <bool name="open_on_start_choice">true</bool>
 
     <!-- Some TVs give their Live TV app no leanback entry point at all, so `live_tv_package` above
          resolves to nothing (TCL Android TV 9 on China-market sets is one). This action is then sent
@@ -69,10 +115,12 @@
 
     <!-- A tile's name instead of the app's own: "package=Name". It also shows above the dock. -->
     <string-array name="app_labels">
+        <item>com.mitv.tvhome.mitvplus=Live TV</item>
     </string-array>
     <!-- A tile's artwork instead of the app's banner: "package=drawable", a banner_* drawable bundled with the
          launcher (res/drawable). banner_tv is a magenta field with the Live TV glyph. -->
     <string-array name="app_banners">
+        <item>com.mitv.tvhome.mitvplus=banner_tv</item>
     </string-array>
 
     <!-- TVs with no TvInputManager have no HDMI list to read, but their own source-selection panel
@@ -189,6 +237,12 @@
          still opens on a tap; "hold:scan:490:..." works for scancodes. A key with only a hold entry does nothing
          on a tap. A listed app that is not installed leaves the button doing nothing. Leave empty to omit. -->
     <string-array name="app_keys" translatable="false">
+        <!-- Xiaomi MiTV-AXSO2 remote: the Mi button (192, scancode 0x0c01a2) could open Mi TV+, the "Live TV" tile,
+             with INPUT_KEY_SERVICE=1. Off on purpose: with the helper bound, a held volume key stops repeating on
+             this TV (docs/devices/tcl-55p71b-g09-key-repeat.md), and volume ramping was kept instead.
+             consume_volume_keys does not help here: a tap still moved one step, a 4 s hold one step, so the helper
+             never sees the volume keys. Without the helper the firmware opens the tuner app (com.android.tv).
+        <item>192:com.mitv.tvhome.mitvplus</item> -->
     </string-array>
 
     <!-- Package of the stock launcher, for TVs whose firmware turns it back on after it was disabled. XGIMI's
@@ -244,22 +298,22 @@
     <bool name="reorder_button">false</bool>
     <!-- Wi-Fi and Settings as round icon-only buttons (the network name moves to the talkback description);
          Inputs keeps its label. -->
-    <bool name="icon_only_buttons">false</bool>
+    <bool name="icon_only_buttons">true</bool>
     <!-- The Inputs pill as a round icon button too (the label moves to the talkback description). -->
-    <bool name="icon_only_inputs">false</bool>
+    <bool name="icon_only_inputs">true</bool>
     <!-- true colours the Wi-Fi pill's icon green while the TV is online and leaves it white while it is not (dark on
          the focused pill either way), so the connection shows at a glance, also as an icon-only button. Can also be
          set with "wifi_status_color": true in a theme's config.json. -->
-    <bool name="wifi_status_color">false</bool>
+    <bool name="wifi_status_color">true</bool>
     <!-- With wifi_status_color: the icon orange while the TV is connected but Android has not reached the internet
          through it (a hotel or holiday-park Wi-Fi waiting for its login page) and red while it is offline, instead
          of white for both. Can also be set with "wifi_status_warnings": true in a theme's config.json. -->
-    <bool name="wifi_status_warnings">false</bool>
+    <bool name="wifi_status_warnings">true</bool>
     <!-- The app library as a round button in the top bar, beside Settings (app_library must be on too). -->
     <bool name="library_button">false</bool>
     <!-- With icon_only_buttons: keep the network name on the Wi-Fi pill up to this width in dp, cut with an ellipsis.
          0 leaves the Wi-Fi pill as an icon. -->
-    <integer name="wifi_label_width">0</integer>
+    <integer name="wifi_label_width">180</integer>
 
     <!-- The Wi-Fi/Ethernet pill in the top bar. false hides it (on Android 14 with Location off it can
          only say "Wi-Fi", not the network name). Can also be set with "show_network_pill" in a theme. -->
@@ -270,10 +324,10 @@
     </string-array>
     <!-- The Inputs pill in the top bar, shown when the TV has inputs to list. false hides it for good; what the
          remote's Input button does is unchanged. Can also be set with "show_inputs_pill" in a theme. -->
-    <bool name="show_inputs_pill">true</bool>
+    <bool name="show_inputs_pill">false</bool>
     <!-- Names under every tile, not only the focused one: unfocused names stay dimmed, the focused one is full white.
          With dock_row the band grows down to hold the dock's names too. -->
-    <bool name="always_show_names">false</bool>
+    <bool name="always_show_names">true</bool>
     <!-- Wallpapers decode as RGB_565 (2 bytes a pixel, 4 MB at 1080p), which bands dark gradients such as a night
          sky, most of all under wallpaper_dim. true decodes them in 32-bit colour: 8 MB, for TVs with 2 GB or more. -->
     <bool name="wallpaper_true_color">false</bool>
@@ -291,7 +345,7 @@
     <!-- Hold OK on a tile opens a small menu: Move (picks the tile up for reordering), Remove from Home (only with
          app_library) and App info. false keeps the old behaviour: holding OK opens the app's App info page.
          Can also be set with "tile_menu": true in a theme's config.json. -->
-    <bool name="tile_menu">false</bool>
+    <bool name="tile_menu">true</bool>
 
     <!-- Grid rows left visible under the dock on the home screen. 0 = dock sits at the very bottom. Tiles shrink if
          the dock, its title and this many rows would not otherwise fit the screen height. -->
@@ -396,7 +450,7 @@
          Unlike the system screensaver this never starts over live TV or an app, which matters on TVs whose
          Live TV window does not keep the screen on (CVTE): there the system screensaver would start in the
          middle of a programme. Can also be set with "home_idle_clock_minutes": 10 in a theme's config.json. -->
-    <integer name="home_idle_clock_minutes">0</integer>
+    <integer name="home_idle_clock_minutes">4</integer>
     <!-- The clock screensaver (Home idle clock and the system screensaver) over Home's wallpaper instead of black with
          a coloured glow. The clock still moves every minute. Can also be set with "clock_wallpaper" in a theme. -->
     <bool name="clock_wallpaper">false</bool>
